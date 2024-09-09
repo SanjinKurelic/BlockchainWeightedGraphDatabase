@@ -1,14 +1,14 @@
-use std::vec;
-use rustc_hash::FxHashMap;
-use node::Node;
 use edge::Edge;
 use error::DatabaseError;
+use node::Node;
+use rustc_hash::FxHashMap;
+use std::vec;
 
-mod index;
-mod node;
 mod edge;
 mod error;
 mod generator;
+mod index;
+mod node;
 
 pub struct Graph {
     pub nodes: FxHashMap<String, Node>,
@@ -19,7 +19,7 @@ impl Default for Graph {
     fn default() -> Self {
         Graph {
             nodes: FxHashMap::default(),
-            indexes: FxHashMap::default()
+            indexes: FxHashMap::default(),
         }
     }
 }
@@ -75,8 +75,10 @@ impl Graph {
         let identifier = attributes.get(Self::ID_ATTRIBUTE).unwrap();
 
         Ok(vec![
-            self.nodes.remove(format!("{identifier}:{name}").as_str())
-                .ok_or(DatabaseError::NodeNotFound(name.clone(), identifier.clone()))?.attributes
+            self.nodes
+                .remove(format!("{identifier}:{name}").as_str())
+                .ok_or(DatabaseError::NodeNotFound(name.clone(), identifier.clone()))?
+                .attributes,
         ])
     }
 
@@ -84,7 +86,12 @@ impl Graph {
     ///
     /// This method will crete edge (connection) between two nodes (from/to name/identifier) with given weight.
     /// If from node or to node does not exist or edge already exist, appropriate error will be returned.
-    pub fn add_edge(&mut self, (from_name, from_atr): (String, FxHashMap<String, String>), (to_name, to_atr): (String, FxHashMap<String, String>), weight: i8) -> GraphResults {
+    pub fn add_edge(
+        &mut self,
+        (from_name, from_atr): (String, FxHashMap<String, String>),
+        (to_name, to_atr): (String, FxHashMap<String, String>),
+        weight: i8,
+    ) -> GraphResults {
         self.validate_edge(&from_atr, &to_atr)?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
@@ -103,13 +110,21 @@ impl Graph {
     ///
     /// This method will update weight of edge (connection) between two nodes (from/to name/identifier).
     /// If from node or to node does not exist or edge does not exist, appropriate error will be returned.
-    pub fn update_edge(&mut self, (from_name, from_atr): (String, FxHashMap<String, String>), (to_name, to_atr): (String, FxHashMap<String, String>), weight: i8) -> GraphResults {
+    pub fn update_edge(
+        &mut self,
+        (from_name, from_atr): (String, FxHashMap<String, String>),
+        (to_name, to_atr): (String, FxHashMap<String, String>),
+        weight: i8,
+    ) -> GraphResults {
         self.validate_edge(&from_atr, &to_atr)?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
         let to_id = to_atr.get(Self::ID_ATTRIBUTE).unwrap();
-        let edge = node.edges.iter_mut().find(|edge| {edge.to_node_id == *to_id})
+        let edge = node
+            .edges
+            .iter_mut()
+            .find(|edge| edge.to_node_id == *to_id)
             .ok_or(DatabaseError::EdgeNotFound(from_name.clone(), to_name.clone()))?;
 
         edge.weight = weight;
@@ -121,13 +136,20 @@ impl Graph {
     ///
     /// This method will delete edge (connection) between two nodes (from/to name/identifier).
     /// If edge/connection does not exist, appropriate error will be returned.
-    pub fn delete_edge(&mut self, (from_name, from_atr): (String, FxHashMap<String, String>), (to_name, to_atr): (String, FxHashMap<String, String>)) -> GraphResults {
+    pub fn delete_edge(
+        &mut self,
+        (from_name, from_atr): (String, FxHashMap<String, String>),
+        (to_name, to_atr): (String, FxHashMap<String, String>),
+    ) -> GraphResults {
         self.validate_edge(&from_atr, &to_atr)?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
         let to_id = to_atr.get(Self::ID_ATTRIBUTE).unwrap();
-        let edge_position = node.edges.iter().position(|edge| {edge.to_node_id == *to_id})
+        let edge_position = node
+            .edges
+            .iter()
+            .position(|edge| edge.to_node_id == *to_id)
             .ok_or(DatabaseError::EdgeNotFound(from_name.clone(), to_name.clone()))?;
 
         // Swap remove and get weight used for returning deleted element
@@ -175,7 +197,8 @@ impl Graph {
     fn fetch_node(&mut self, name: &String, attributes: &FxHashMap<String, String>) -> Result<&mut Node, DatabaseError> {
         let identifier = attributes.get(Self::ID_ATTRIBUTE).unwrap();
 
-        self.nodes.get_mut(format!("{identifier}:{name}").as_str())
+        self.nodes
+            .get_mut(format!("{identifier}:{name}").as_str())
             .ok_or(DatabaseError::NodeNotFound(name.clone(), identifier.clone()))
     }
 }

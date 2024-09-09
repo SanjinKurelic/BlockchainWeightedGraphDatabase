@@ -5,7 +5,7 @@ pub enum DatabaseError {
     AttributeIsRequired(String),
     EdgeAlreadyExists(String, String),
     EdgeNotFound(String, String),
-    NodeNotFound(String, String)
+    NodeNotFound(String, String),
 }
 
 impl Debug for DatabaseError {

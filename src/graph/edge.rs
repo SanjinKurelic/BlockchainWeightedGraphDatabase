@@ -4,7 +4,7 @@ use derive_more::Constructor;
 pub struct Edge {
     pub to_node: String,
     pub to_node_id: String,
-    pub weight: i8
+    pub weight: i8,
 }
 
 impl PartialEq for Edge {

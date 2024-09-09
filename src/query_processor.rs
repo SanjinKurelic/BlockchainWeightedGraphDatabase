@@ -1,12 +1,13 @@
 extern crate peg;
 
+use crate::graph::Graph;
+use crate::graph::GraphResults;
+use peg::error::ParseError;
+use peg::str::LineCol;
 use rustc_hash::FxHashMap;
-use graph::GraphResults;
-
-mod graph;
 
 peg::parser! {
-    grammar query_parser(graph: &mut graph::Graph) for str {
+    grammar query_parser(graph: &mut Graph) for str {
         pub rule command() -> GraphResults = add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge()
 
         rule add_node() -> GraphResults = _ "add" _ "node" _ name:name() _ attributes:attributes()? {
@@ -55,9 +56,16 @@ peg::parser! {
     }
 }
 
+pub struct QueryProcessor;
+
+impl QueryProcessor {
+    pub fn parse_command(graph: &mut Graph, command: &str) -> Result<GraphResults, ParseError<LineCol>> {
+        query_parser::command(command, graph)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::graph::Graph;
     use super::*;
 
     #[test]
@@ -165,7 +173,14 @@ mod tests {
     }
 
     fn insert_new_node(graph: &mut Graph, name: &str) -> String {
-        graph.add_node(name.to_string(), FxHashMap::default()).unwrap().first().unwrap().get("$id").unwrap().to_string()
+        graph
+            .add_node(name.to_string(), FxHashMap::default())
+            .unwrap()
+            .first()
+            .unwrap()
+            .get("$id")
+            .unwrap()
+            .to_string()
     }
 
     fn insert_new_edge(graph: &mut Graph, from: String, to: String, weight: i8) {
@@ -175,14 +190,12 @@ mod tests {
         let mut to_attributes = FxHashMap::default();
         to_attributes.insert("$id".to_string(), to);
 
-        assert!(graph.add_edge(
-            ("From".to_string(), from_attributes),
-            ("To".to_string(), to_attributes),
-            weight
-        ).is_ok());
+        assert!(graph
+            .add_edge(("From".to_string(), from_attributes), ("To".to_string(), to_attributes), weight)
+            .is_ok());
     }
 
-    fn assert_graph_result(result: Result<GraphResults, peg::error::ParseError<peg::str::LineCol>>, expected: Vec<(&str, &str)>) {
+    fn assert_graph_result(result: Result<GraphResults, ParseError<LineCol>>, expected: Vec<(&str, &str)>) {
         assert!(result.is_ok()); // No parsing errors
 
         let graph_result = result.unwrap();
@@ -197,8 +210,7 @@ mod tests {
             // For random values we can set value as "_" to check only if present, not its content
             if value != "_" {
                 assert_eq!(actual.get(key).unwrap(), value);
-            }
-            else {
+            } else {
                 assert!(!actual.get(key).unwrap().is_empty());
             }
         });
@@ -216,11 +228,9 @@ mod tests {
                 assert_eq!(edge.to_node, "To");
                 assert_eq!(edge.to_node_id, to_id);
                 assert_eq!(edge.weight, weight);
-            }
-            else if *id == format!("{to_id}:To") {
+            } else if *id == format!("{to_id}:To") {
                 assert!(node.edges.is_empty())
-            }
-            else {
+            } else {
                 assert!(false)
             }
         }

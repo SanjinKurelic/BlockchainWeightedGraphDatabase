@@ -11,26 +11,19 @@ This Graph Database also support simple query language for CRUD operations under
 
 ## Example
 
-Let's say we have graph network where we have Users and Playlists with Songs. Each User can give reaction to the Playlist
+Let's say we have graph network where we have Users and Playlists with Songs. Each User can give reaction to the
+Playlist
 with emoticon:
 
-| Emoticon         | Weight |
-|------------------|--------|
-| :metal:          | 90     | 
-| :partying_face:  | 70     | 
-| :astonished:     | 60     | 
-| :hushed:         | 45     | 
-| :yum:            | 30     | 
-| :smiley:         | 20     | 
-| :wink:           | 10     | 
-| :expressionless: | 0      | 
-| :confused:       | -10    | 
-| :sleepy:         | -20    | 
-| :sleeping:       | -30    | 
-| :unamused:       | -45    | 
-| :disappointed:   | -60    | 
-| :-1:             | -70    | 
-| :no_entry_sign:  | -90    | 
+| Positive Emoticon | Weight | Neutral Emoticon | Weight | Negative Emoticon | Weight |
+|:-----------------:|:------:|:----------------:|:------:|:-----------------:|:------:|
+|      :metal:      |   90   | :expressionless: |   0    |    :confused:     |  -10   |  
+|  :partying_face:  |   70   |                  |        |     :sleepy:      |  -20   | 
+|   :astonished:    |   60   |                  |        |    :sleeping:     |  -30   | 
+|     :hushed:      |   45   |                  |        |    :unamused:     |  -45   | 
+|       :yum:       |   30   |                  |        |  :disappointed:   |  -60   | 
+|     :smiley:      |   20   |                  |        |       :-1:        |  -70   | 
+|      :wink:       |   10   |                  |        |  :no_entry_sign:  |  -90   |
 
 To create such network, first we should create nodes:
 
@@ -52,7 +45,8 @@ Then we can connect nodes that are fixed by the design:
 add connection from Playlist($id="OpRi5Yhr0s4TbQXU") to Song($id="TYqHmCEulrTXI0hk") with weight 100
 ```
 
-On the client app we can map all those emoticons to weight numbers, so when user react with :partying_face: this command should
+On the client app we can map all those emoticons to weight numbers, so when user react with :partying_face: this command
+should
 be sent to the Graph Database:
 
 ```
