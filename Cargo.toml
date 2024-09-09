@@ -1,0 +1,10 @@
+[package]
+name = "weighted_graph"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+derive_more = { version = "1.0.0", features = ["constructor"] }
+nanoid = "0.4.0"
+peg = "0.8.4"
+rustc-hash = "2.0"
