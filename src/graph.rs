@@ -7,19 +7,18 @@ use std::vec;
 mod edge;
 mod error;
 mod generator;
-mod index;
 mod node;
 
 pub struct Graph {
+    pub definitions: FxHashMap<String, Vec<String>>,
     pub nodes: FxHashMap<String, Node>,
-    pub indexes: FxHashMap<&'static str, String>,
 }
 
 impl Default for Graph {
     fn default() -> Self {
         Graph {
+            definitions: FxHashMap::default(),
             nodes: FxHashMap::default(),
-            indexes: FxHashMap::default(),
         }
     }
 }
@@ -30,12 +29,25 @@ impl Graph {
     const ID_ATTRIBUTE: &'static str = "$id";
     const NAME_ATTRIBUTE: &'static str = "$name";
 
+    /// Create node definition
+    ///
+    /// Node definition is used to validate all queries against specific node, e.g. are all attributes defined.
+    pub fn create_definition(&mut self, name: String, attributes: Vec<String>) -> GraphResults {
+        if self.definitions.contains_key(&name) {
+            return Err(DatabaseError::NodeAlreadyExists(name));
+        }
+
+        self.definitions.insert(name, attributes.clone());
+
+        self.return_definition(attributes)
+    }
+
     /// Add node to the graph
     ///
     /// This method will add named node with given attributes to the graph database.
     /// Method will also check if attributes are valid and does not contain any internal attribute.
     pub fn add_node(&mut self, name: String, mut attributes: FxHashMap<String, String>) -> GraphResults {
-        self.validate_attributes(&attributes, vec![])?;
+        self.validate_attributes(&name, &attributes, vec![])?;
 
         let identifier = generator::IdGenerator::generate();
         attributes.insert(Self::ID_ATTRIBUTE.to_string(), identifier.clone());
@@ -52,7 +64,7 @@ impl Graph {
     /// $id must be present so specific node is found. Other internal attributes are not possible to set or change.
     /// If node was not found, appropriate error will be returned.
     pub fn update_node(&mut self, name: String, mut attributes: FxHashMap<String, String>) -> GraphResults {
-        self.validate_attributes(&attributes, vec![Self::ID_ATTRIBUTE])?;
+        self.validate_attributes(&name, &attributes, vec![Self::ID_ATTRIBUTE])?;
 
         let node = self.fetch_node(&name, &attributes)?;
 
@@ -70,7 +82,7 @@ impl Graph {
     /// $id must be present so specific node is deleted.
     /// If node was not found, appropriate error will be returned.
     pub fn delete_node(&mut self, name: String, attributes: FxHashMap<String, String>) -> GraphResults {
-        self.validate_attributes(&attributes, vec![Self::ID_ATTRIBUTE])?;
+        self.validate_attributes(&name, &attributes, vec![Self::ID_ATTRIBUTE])?;
 
         let identifier = attributes.get(Self::ID_ATTRIBUTE).unwrap();
 
@@ -92,7 +104,7 @@ impl Graph {
         (to_name, to_atr): (String, FxHashMap<String, String>),
         weight: i8,
     ) -> GraphResults {
-        self.validate_edge(&from_atr, &to_atr)?;
+        self.validate_edge((&from_name, &from_atr), (&to_name, &to_atr))?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
         let edge = Edge::new(to_name.clone(), to_atr.get(Self::ID_ATTRIBUTE).unwrap().clone(), weight);
@@ -116,7 +128,7 @@ impl Graph {
         (to_name, to_atr): (String, FxHashMap<String, String>),
         weight: i8,
     ) -> GraphResults {
-        self.validate_edge(&from_atr, &to_atr)?;
+        self.validate_edge((&from_name, &from_atr), (&to_name, &to_atr))?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
@@ -141,7 +153,7 @@ impl Graph {
         (from_name, from_atr): (String, FxHashMap<String, String>),
         (to_name, to_atr): (String, FxHashMap<String, String>),
     ) -> GraphResults {
-        self.validate_edge(&from_atr, &to_atr)?;
+        self.validate_edge((&from_name, &from_atr), (&to_name, &to_atr))?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
@@ -158,6 +170,16 @@ impl Graph {
         self.return_edge(from_name, to_name, weight)
     }
 
+    fn return_definition(&self, attributes: Vec<String>) -> GraphResults {
+        let mut result = FxHashMap::default();
+
+        attributes.iter().for_each(|attribute| {
+            result.insert(attribute.clone(), "*".to_string());
+        });
+
+        Ok(vec![result])
+    }
+
     fn return_edge(&mut self, from: String, to: String, weight: i8) -> GraphResults {
         let mut edge_attributes = FxHashMap::default();
 
@@ -168,10 +190,20 @@ impl Graph {
         Ok(vec![edge_attributes])
     }
 
-    /// Check if internal attributes are present in attributes map. Other internal variables are not allowed to be used.
-    fn validate_attributes(&mut self, check: &FxHashMap<String, String>, internal_attributes: Vec<&str>) -> Result<(), DatabaseError> {
+    /// Check if attributes are same as defined in node definition.
+    /// Also, check if only allowed internal attributes are present in attributes map.
+    fn validate_attributes(
+        &mut self,
+        node_name: &String,
+        check: &FxHashMap<String, String>,
+        internal_attributes: Vec<&str>,
+    ) -> Result<(), DatabaseError> {
+        let allowed_attributes = self.definitions.get(node_name).ok_or(DatabaseError::NodeNotDefined(node_name.clone()))?;
+
         for (key, _) in check {
             if key.starts_with('$') && !internal_attributes.contains(&key.as_str()) {
+                return Err(DatabaseError::AttributeNotAllowed(key.clone()));
+            } else if !key.starts_with('$') && !allowed_attributes.contains(key) {
                 return Err(DatabaseError::AttributeNotAllowed(key.clone()));
             }
         }
@@ -186,9 +218,13 @@ impl Graph {
     }
 
     /// This method will validate edge attributes for bot from and to node.
-    fn validate_edge(&mut self, from: &FxHashMap<String, String>, to: &FxHashMap<String, String>) -> Result<(), DatabaseError> {
-        self.validate_attributes(from, vec![Self::ID_ATTRIBUTE])?;
-        self.validate_attributes(to, vec![Self::ID_ATTRIBUTE])?;
+    fn validate_edge(
+        &mut self,
+        (from_name, from_atr): (&String, &FxHashMap<String, String>),
+        (to_name, to_atr): (&String, &FxHashMap<String, String>),
+    ) -> Result<(), DatabaseError> {
+        self.validate_attributes(from_name, from_atr, vec![Self::ID_ATTRIBUTE])?;
+        self.validate_attributes(to_name, to_atr, vec![Self::ID_ATTRIBUTE])?;
 
         Ok(())
     }

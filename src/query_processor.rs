@@ -8,7 +8,11 @@ use rustc_hash::FxHashMap;
 
 peg::parser! {
     grammar query_parser(graph: &mut Graph) for str {
-        pub rule command() -> GraphResults = add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge()
+        pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge()
+
+        rule define_node() -> GraphResults = _ "define" _ "node" _ name:name() _ attributes:attribute_definitions() _ validators:validators() {
+            graph.create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect())
+        }
 
         rule add_node() -> GraphResults = _ "add" _ "node" _ name:name() _ attributes:attributes()? {
             graph.add_node(name.to_string(), attributes.unwrap_or_else(FxHashMap::default))
@@ -34,6 +38,8 @@ peg::parser! {
             graph.delete_edge((from_name.to_string(), from_attributes), (to_name.to_string(), to_attributes))
         }
 
+        rule validators() -> Vec<&'input str> = _ "with" _ "validator" _ validators:attribute_definitions() { validators }
+
         rule attributes() -> FxHashMap<String, String> = "(" attributes:attribute() ** "," ")" {
             attributes.iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -45,6 +51,10 @@ peg::parser! {
         rule attribute_name() -> &'input str = $(['a'..='z' | 'A'..='Z' | '0'..='9' | '$' | '*']+)
 
         rule attribute_value() -> &'input str = "\"" value:__ "\"" { value }
+
+        rule attribute_definitions() -> Vec<&'input str> = "(" names:attribute_definition() ** "," ")" { names }
+
+        rule attribute_definition() -> &'input str = $(['a'..='z' | 'A'..='Z' | '0'..='9' | '*']+)
 
         rule name() -> &'input str = $(['a'..='z' | 'A'..='Z']+)
 
@@ -69,9 +79,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn should_add_node_definition() {
+        // Given
+        let mut graph = Graph::default();
+        let cmd = "define node Person(name,premium) with validator (premium)";
+
+        // When
+        let result = query_parser::command(cmd, &mut graph);
+
+        // Then
+        assert_graph_result(result, vec![("name", "*"), ("premium", "*")]);
+
+        assert!(graph.nodes.is_empty());
+        assert_eq!(graph.definitions.len(), 1);
+        assert!(graph.definitions.contains_key("Person"));
+
+        let conditions = graph.definitions.get("Person").unwrap();
+        assert_eq!(*conditions, vec!["name", "premium"]);
+    }
+
+    #[test]
     fn should_add_node() {
         // Given
         let mut graph = Graph::default();
+        graph
+            .create_definition("Person".to_string(), vec!["name".to_string()])
+            .expect("Inserting definition failed");
+
         let command = "add node Person(name=\"Janne\")";
 
         // When
@@ -86,7 +120,7 @@ mod tests {
     fn should_update_node() {
         // Given
         let mut graph = Graph::default();
-        let identifier = insert_new_node(&mut graph, "Person");
+        let identifier = insert_new_node_with_attributes(&mut graph, "Person", vec!["name"]);
 
         let command = format!("update node Person($id=\"{}\",name=\"Janne\")", identifier);
 
@@ -173,6 +207,14 @@ mod tests {
     }
 
     fn insert_new_node(graph: &mut Graph, name: &str) -> String {
+        insert_new_node_with_attributes(graph, name, vec![])
+    }
+
+    fn insert_new_node_with_attributes(graph: &mut Graph, name: &str, attributes: Vec<&str>) -> String {
+        graph
+            .create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect())
+            .expect("Inserting definition failed");
+
         graph
             .add_node(name.to_string(), FxHashMap::default())
             .unwrap()
