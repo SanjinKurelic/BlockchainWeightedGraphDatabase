@@ -77,6 +77,7 @@ impl QueryProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::attribute::InternalNodeAttribute;
 
     #[test]
     fn should_add_node_definition() {
@@ -112,7 +113,15 @@ mod tests {
         let result = query_parser::command(command, &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$id", "_"), ("$name", "Person"), ("name", "Janne")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::ID_ATTRIBUTE, "_"),
+                (InternalNodeAttribute::NAME_ATTRIBUTE, "Person"),
+                ("name", "Janne"),
+                (InternalNodeAttribute::EDGE_COUNT_ATTRIBUTE, "0"),
+            ],
+        );
         assert_eq!(graph.nodes.len(), 1);
     }
 
@@ -128,7 +137,15 @@ mod tests {
         let result = query_parser::command(command.as_str(), &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$id", identifier.as_str()), ("$name", "Person"), ("name", "Janne")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::ID_ATTRIBUTE, identifier.as_str()),
+                (InternalNodeAttribute::NAME_ATTRIBUTE, "Person"),
+                ("name", "Janne"),
+                (InternalNodeAttribute::EDGE_COUNT_ATTRIBUTE, "0"),
+            ],
+        );
         assert_eq!(graph.nodes.len(), 1);
     }
 
@@ -144,7 +161,14 @@ mod tests {
         let result = query_parser::command(command.as_str(), &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$id", identifier.as_str()), ("$name", "Person")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::ID_ATTRIBUTE, identifier.as_str()),
+                (InternalNodeAttribute::NAME_ATTRIBUTE, "Person"),
+                (InternalNodeAttribute::EDGE_COUNT_ATTRIBUTE, "0"),
+            ],
+        );
         assert!(graph.nodes.is_empty());
     }
 
@@ -161,7 +185,14 @@ mod tests {
         let result = query_parser::command(cmd.as_str(), &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$from", "From"), ("$to", "To"), ("$weight", "50")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::FROM_ATTRIBUTE, "From"),
+                (InternalNodeAttribute::TO_ATTRIBUTE, "To"),
+                (InternalNodeAttribute::WEIGHT_ATTRIBUTE, "50"),
+            ],
+        );
         assert_edge(&mut graph, from_id, to_id, 50);
     }
 
@@ -180,7 +211,14 @@ mod tests {
         let result = query_parser::command(cmd.as_str(), &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$from", "From"), ("$to", "To"), ("$weight", "80")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::FROM_ATTRIBUTE, "From"),
+                (InternalNodeAttribute::TO_ATTRIBUTE, "To"),
+                (InternalNodeAttribute::WEIGHT_ATTRIBUTE, "80"),
+            ],
+        );
         assert_edge(&mut graph, from_id, to_id, 80);
     }
 
@@ -199,7 +237,14 @@ mod tests {
         let result = query_parser::command(cmd.as_str(), &mut graph);
 
         // Then
-        assert_graph_result(result, vec![("$from", "From"), ("$to", "To"), ("$weight", "50")]);
+        assert_graph_result(
+            result,
+            vec![
+                (InternalNodeAttribute::FROM_ATTRIBUTE, "From"),
+                (InternalNodeAttribute::TO_ATTRIBUTE, "To"),
+                (InternalNodeAttribute::WEIGHT_ATTRIBUTE, "50"),
+            ],
+        );
 
         for (_, node) in &graph.nodes {
             assert!(node.edges.is_empty());
