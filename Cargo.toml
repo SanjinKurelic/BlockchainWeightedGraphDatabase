@@ -6,8 +6,11 @@ edition = "2021"
 [dependencies]
 derive_more = { version = "1.0.0", features = ["constructor"] }
 hex = "0.4.3"
+libp2p = { version = "0.54.1", features = [ "tokio", "gossipsub", "mdns", "noise", "macros", "tcp", "yamux"] }
 nanoid = "0.4.0"
 peg = "0.8.4"
 rustc-hash = "2.0"
 serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
 sha256 = "1.5.0"
+tokio = { version = "1.40.0", features = ["io-util", "io-std", "macros", "rt", "rt-multi-thread", "sync", "time"] }

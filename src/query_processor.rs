@@ -1,5 +1,6 @@
 extern crate peg;
 
+use crate::chain::Chain;
 use crate::graph::Graph;
 use crate::graph::GraphResults;
 use peg::error::ParseError;
@@ -7,15 +8,27 @@ use peg::str::LineCol;
 use rustc_hash::FxHashMap;
 
 peg::parser! {
-    grammar query_parser(graph: &mut Graph) for str {
+    grammar query_parser(graph: &mut Graph, chain: &mut Chain) for str {
         pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge()
 
-        rule define_node() -> GraphResults = _ "define" _ "node" _ name:name() _ attributes:attribute_definitions() _ validators:validators() {
-            graph.create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect())
+        rule define_node() -> GraphResults = _ "define" _ "node" _ name:name() _ attributes:attribute_definitions() _ conditions:agent()? {
+            let result = graph.create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect());
+
+            if result.is_ok() && conditions.is_some() {
+                chain.register_agent(name.to_string(), conditions.unwrap())
+            }
+
+            result
         }
 
         rule add_node() -> GraphResults = _ "add" _ "node" _ name:name() _ attributes:attributes()? {
-            graph.add_node(name.to_string(), attributes.unwrap_or_else(FxHashMap::default))
+            let result = graph.add_node(name.to_string(), attributes.clone().unwrap_or_else(FxHashMap::default));
+
+            if result.is_ok() && attributes.is_some() {
+                chain.add_or_update_agent(name.to_string(), attributes.unwrap());
+            }
+
+            result
         }
 
         rule add_edge() -> GraphResults = _ "add" _ "connection" _ "from" _ from_name:name() _ from_attributes:attributes() _ "to" _ to_name:name() _ to_attributes:attributes() _ "with" _ "weight" _ weight:weight()  {
@@ -38,7 +51,7 @@ peg::parser! {
             graph.delete_edge((from_name.to_string(), from_attributes), (to_name.to_string(), to_attributes))
         }
 
-        rule validators() -> Vec<&'input str> = _ "with" _ "validator" _ validators:attribute_definitions() { validators }
+        rule agent() -> FxHashMap<String, String> = _ "with" _ "agent" _ conditions:attributes() { conditions }
 
         rule attributes() -> FxHashMap<String, String> = "(" attributes:attribute() ** "," ")" {
             attributes.iter()
@@ -69,8 +82,8 @@ peg::parser! {
 pub struct QueryProcessor;
 
 impl QueryProcessor {
-    pub fn parse_command(graph: &mut Graph, command: &str) -> Result<GraphResults, ParseError<LineCol>> {
-        query_parser::command(command, graph)
+    pub fn parse_command(mut graph: &mut Graph, mut chain: &mut Chain, command: &str) -> Result<GraphResults, ParseError<LineCol>> {
+        query_parser::command(command, &mut graph, &mut chain)
     }
 }
 
@@ -83,10 +96,11 @@ mod tests {
     fn should_add_node_definition() {
         // Given
         let mut graph = Graph::default();
-        let cmd = "define node Person(name,premium) with validator (premium)";
+        let mut chain = Chain::default();
+        let cmd = "define node Person(name,premium) with agent (premium=\"true\")";
 
         // When
-        let result = query_parser::command(cmd, &mut graph);
+        let result = query_parser::command(cmd, &mut graph, &mut chain);
 
         // Then
         assert_graph_result(result, vec![("name", "*"), ("premium", "*")]);
@@ -97,12 +111,15 @@ mod tests {
 
         let conditions = graph.definitions.get("Person").unwrap();
         assert_eq!(*conditions, vec!["name", "premium"]);
+
+        assert_eq!(chain.agent_service.agents.len(), 1);
     }
 
     #[test]
     fn should_add_node() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         graph
             .create_definition("Person".to_string(), vec!["name".to_string()])
             .expect("Inserting definition failed");
@@ -110,7 +127,7 @@ mod tests {
         let command = "add node Person(name=\"Janne\")";
 
         // When
-        let result = query_parser::command(command, &mut graph);
+        let result = query_parser::command(command, &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
@@ -129,12 +146,13 @@ mod tests {
     fn should_update_node() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         let identifier = insert_new_node_with_attributes(&mut graph, "Person", vec!["name"]);
 
         let command = format!("update node Person($id=\"{}\",name=\"Janne\")", identifier);
 
         // When
-        let result = query_parser::command(command.as_str(), &mut graph);
+        let result = query_parser::command(command.as_str(), &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
@@ -153,12 +171,13 @@ mod tests {
     fn should_delete_node() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         let identifier = insert_new_node(&mut graph, "Person");
 
         let command = format!("delete node Person($id=\"{}\")", identifier);
 
         // When
-        let result = query_parser::command(command.as_str(), &mut graph);
+        let result = query_parser::command(command.as_str(), &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
@@ -176,13 +195,14 @@ mod tests {
     fn should_add_edge() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         let from_id = insert_new_node(&mut graph, "From");
         let to_id = insert_new_node(&mut graph, "To");
 
         let cmd = format!("add connection from From($id=\"{}\") to To($id=\"{}\") with weight 50", from_id, to_id);
 
         // When
-        let result = query_parser::command(cmd.as_str(), &mut graph);
+        let result = query_parser::command(cmd.as_str(), &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
@@ -200,6 +220,7 @@ mod tests {
     fn should_update_edge() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         let from_id = insert_new_node(&mut graph, "From");
         let to_id = insert_new_node(&mut graph, "To");
 
@@ -208,7 +229,7 @@ mod tests {
         let cmd = format!("update connection from From($id=\"{}\") to To($id=\"{}\") with weight 80", from_id, to_id);
 
         // When
-        let result = query_parser::command(cmd.as_str(), &mut graph);
+        let result = query_parser::command(cmd.as_str(), &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
@@ -226,6 +247,7 @@ mod tests {
     fn should_delete_edge() {
         // Given
         let mut graph = Graph::default();
+        let mut chain = Chain::default();
         let from_id = insert_new_node(&mut graph, "From");
         let to_id = insert_new_node(&mut graph, "To");
 
@@ -234,7 +256,7 @@ mod tests {
         let cmd = format!("delete connection from From($id=\"{}\") to To($id=\"{}\")", from_id, to_id);
 
         // When
-        let result = query_parser::command(cmd.as_str(), &mut graph);
+        let result = query_parser::command(cmd.as_str(), &mut graph, &mut chain);
 
         // Then
         assert_graph_result(
