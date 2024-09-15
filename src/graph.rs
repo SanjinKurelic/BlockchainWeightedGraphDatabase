@@ -28,6 +28,35 @@ impl Default for Graph {
 pub type GraphResults = Result<Vec<FxHashMap<String, String>>, DatabaseError>;
 
 impl Graph {
+    /// Fetch node
+    ///
+    /// Fetch node with all joins by given attributes. If no node was found, error is returned.
+    /// If node is found but joins does not meet given query, empty result is returned.
+    /// This behaviour is currently ok, as we can only fetch nodes by id. Fetching by attributes
+    /// would require adding searchable index tree.
+    pub fn search(&mut self, name: String, attributes: FxHashMap<String, String>, joins: Vec<(String, i8)>) -> GraphResults {
+        let node = self.fetch_node(&name, &attributes)?.clone();
+
+        let mut result = node.attributes;
+
+        // Collect edges
+        for (join, weight) in &joins {
+            let edge = node.edges.iter().find(|edge| edge.to_node == *join);
+
+            if edge.is_none() || edge.unwrap().weight < *weight {
+                return Ok(vec![]);
+            }
+
+            let edge = edge.unwrap();
+            self.find_by_id(&edge.to_node, &edge.to_node_id)?.attributes.iter()
+                .for_each(|(key, value)| {
+                    result.insert(format!("{}.{key}", edge.to_node), value.clone());
+                });
+        }
+
+        Ok(vec![result])
+    }
+
     /// Create node definition
     ///
     /// Node definition is used to validate all queries against specific node, e.g. are all attributes defined.
@@ -85,7 +114,7 @@ impl Graph {
     pub fn delete_node(&mut self, name: String, attributes: FxHashMap<String, String>) -> GraphResults {
         self.validate_attributes(&name, &attributes, vec![InternalNodeAttribute::ID_ATTRIBUTE])?;
 
-        let identifier = attributes.get(InternalNodeAttribute::ID_ATTRIBUTE).unwrap();
+        let identifier = InternalNodeAttribute::get_identifier(&attributes);
 
         Ok(vec![
             self.nodes
@@ -108,7 +137,7 @@ impl Graph {
         self.validate_edge((&from_name, &from_atr), (&to_name, &to_atr))?;
 
         let node = self.fetch_node(&from_name, &from_atr)?;
-        let edge = Edge::new(to_name.clone(), to_atr.get(InternalNodeAttribute::ID_ATTRIBUTE).unwrap().clone(), weight);
+        let edge = Edge::new(to_name.clone(), InternalNodeAttribute::get_identifier(&to_atr), weight);
 
         if node.edges.contains(&edge) {
             return Err(DatabaseError::EdgeAlreadyExists(from_name, to_name));
@@ -135,7 +164,7 @@ impl Graph {
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
-        let to_id = to_atr.get(InternalNodeAttribute::ID_ATTRIBUTE).unwrap();
+        let to_id = InternalNodeAttribute::get_identifier(&to_atr);
         let edge = node
             .edges
             .iter_mut()
@@ -160,7 +189,7 @@ impl Graph {
 
         let node = self.fetch_node(&from_name, &from_atr)?;
 
-        let to_id = to_atr.get(InternalNodeAttribute::ID_ATTRIBUTE).unwrap();
+        let to_id = InternalNodeAttribute::get_identifier(&to_atr);
         let edge_position = node
             .edges
             .iter()
@@ -238,8 +267,12 @@ impl Graph {
 
     /// This method will find node and return mut reference.
     fn fetch_node(&mut self, name: &String, attributes: &FxHashMap<String, String>) -> Result<&mut Node, DatabaseError> {
-        let identifier = attributes.get(InternalNodeAttribute::ID_ATTRIBUTE).unwrap();
+        let identifier = InternalNodeAttribute::get_identifier(attributes);
 
+        self.find_by_id(name, &identifier)
+    }
+
+    pub fn find_by_id(&mut self, name: &String, identifier: &String) -> Result<&mut Node, DatabaseError> {
         self.nodes
             .get_mut(format!("{identifier}:{name}").as_str())
             .ok_or(DatabaseError::NodeNotFound(name.clone(), identifier.clone()))

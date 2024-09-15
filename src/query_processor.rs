@@ -9,7 +9,9 @@ use rustc_hash::FxHashMap;
 
 peg::parser! {
     grammar query_parser(graph: &mut Graph, chain: &mut Chain) for str {
-        pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge()
+        use crate::graph::attribute::InternalNodeAttribute;
+
+        pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge() / fetch_node()
 
         rule define_node() -> GraphResults = _ "define" _ "node" _ name:name() _ attributes:attribute_definitions() _ conditions:agent()? {
             let result = graph.create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect());
@@ -21,9 +23,14 @@ peg::parser! {
             result
         }
 
+        rule fetch_node() -> GraphResults = _ "fetch" _ "node" _ name:name() _ attributes:attributes() _ joins:joins() {
+            graph.search(name.to_string(), attributes, joins)
+        }
+
         rule add_node() -> GraphResults = _ "add" _ "node" _ name:name() _ attributes:attributes()? {
             let result = graph.add_node(name.to_string(), attributes.clone().unwrap_or_else(FxHashMap::default));
 
+            // Attributes are required for agent registration
             if result.is_ok() && attributes.is_some() {
                 chain.add_or_update_agent(name.to_string(), attributes.unwrap());
             }
@@ -52,6 +59,10 @@ peg::parser! {
         }
 
         rule agent() -> FxHashMap<String, String> = _ "with" _ "agent" _ conditions:attributes() { conditions }
+
+        rule joins() -> Vec<(String, i8)> = joins:join() ** _ { joins }
+
+        rule join() -> (String, i8) = _ "join" _ name:name() _ "($weight>\"" weight:weight() "\")" { (name.to_string(), weight) }
 
         rule attributes() -> FxHashMap<String, String> = "(" attributes:attribute() ** "," ")" {
             attributes.iter()
@@ -91,6 +102,28 @@ impl QueryProcessor {
 mod tests {
     use super::*;
     use crate::graph::attribute::InternalNodeAttribute;
+
+    #[test]
+    fn should_fetch_node() {
+        // Given
+        let mut graph = Graph::default();
+        let mut chain = Chain::default();
+
+        let from = insert_new_node(&mut graph, "From");
+        let to = insert_new_node(&mut graph, "To");
+
+        insert_new_edge(&mut graph, from.clone(), to.clone(), 50);
+
+        let cmd = format!("fetch node From($id=\"{from}\") join To($weight>\"0\")");
+
+        // When
+        let result = query_parser::command(cmd.as_str(), &mut graph, &mut chain);
+
+        // Then
+        assert_graph_result(result, vec![
+            ("$name", "From"), ("$id", from.as_str()), ("$edges", "1"), ("To.$id", to.as_str()), ("To.$name", "To"), ("To.$edges", "0")
+        ]);
+    }
 
     #[test]
     fn should_add_node_definition() {

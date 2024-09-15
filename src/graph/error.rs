@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum DatabaseError {
     AttributeNotAllowed(String),
     AttributeIsRequired(String),
