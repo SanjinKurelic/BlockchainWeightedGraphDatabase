@@ -11,13 +11,13 @@ peg::parser! {
     grammar query_parser(graph: &mut Graph, chain: &mut Chain) for str {
         use crate::graph::attribute::InternalNodeAttribute;
 
-        pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge() / fetch_node()
+        pub rule command() -> GraphResults = define_node() / add_node() / update_node() / delete_node() / add_edge() / update_edge() / delete_edge() / fetch_node() / fetch_connection()
 
         rule define_node() -> GraphResults = _ "define" _ "node" _ name:name() _ attributes:attribute_definitions() _ conditions:agent()? {
             let result = graph.create_definition(name.to_string(), attributes.iter().map(|attribute| attribute.to_string()).collect());
 
             if result.is_ok() && conditions.is_some() {
-                chain.register_agent(name.to_string(), conditions.unwrap())
+                chain.define_agent(name.to_string(), conditions.unwrap())
             }
 
             result
@@ -27,35 +27,76 @@ peg::parser! {
             graph.search(name.to_string(), attributes, joins)
         }
 
+        rule fetch_connection() -> GraphResults = _ "fetch" _ "connection" _ "chain" {
+            chain.as_graph_result()
+        }
+
         rule add_node() -> GraphResults = _ "add" _ "node" _ name:name() _ attributes:attributes()? {
             let result = graph.add_node(name.to_string(), attributes.clone().unwrap_or_else(FxHashMap::default));
 
             // Attributes are required for agent registration
             if result.is_ok() && attributes.is_some() {
-                chain.add_or_update_agent(name.to_string(), attributes.unwrap());
+                chain.add_or_update_agent(graph, name.to_string(), InternalNodeAttribute::get_identifier(result.clone().unwrap().first().unwrap()));
             }
 
             result
         }
 
         rule add_edge() -> GraphResults = _ "add" _ "connection" _ "from" _ from_name:name() _ from_attributes:attributes() _ "to" _ to_name:name() _ to_attributes:attributes() _ "with" _ "weight" _ weight:weight()  {
-            graph.add_edge((from_name.to_string(), from_attributes), (to_name.to_string(), to_attributes), weight)
+            let result = graph.add_edge((from_name.to_string(), from_attributes.clone()), (to_name.to_string(), to_attributes.clone()), weight);
+
+            if result.is_ok() {
+                  if let Err(error) = chain.add_edge_change(InternalNodeAttribute::get_identifier(&from_attributes),InternalNodeAttribute::get_identifier(&to_attributes), weight) {
+                    eprintln!("Chain error: {error}");
+                }
+            }
+
+            result
         }
 
         rule update_node() -> GraphResults = _ "update" _ "node" _ name:name() _ attributes:attributes() {
-            graph.update_node(name.to_string(), attributes)
+            let result = graph.update_node(name.to_string(), attributes.clone());
+
+            // Handle case where user does not meet conditions anymore
+            if result.is_ok() {
+               chain.add_or_update_agent(graph, name.to_string(), InternalNodeAttribute::get_identifier(&attributes));
+            }
+
+            result
         }
 
         rule update_edge() -> GraphResults = _ "update" _ "connection" _ "from" _ from_name:name() _ from_attributes:attributes() _ "to" _ to_name:name() _ to_attributes:attributes() _ "with" _ "weight" _ weight:weight()  {
-            graph.update_edge((from_name.to_string(), from_attributes), (to_name.to_string(), to_attributes), weight)
+            let result = graph.update_edge((from_name.to_string(), from_attributes.clone()), (to_name.to_string(), to_attributes.clone()), weight);
+
+            if result.is_ok() {
+                if let Err(error) = chain.add_edge_change(InternalNodeAttribute::get_identifier(&from_attributes),InternalNodeAttribute::get_identifier(&to_attributes), weight) {
+                    eprintln!("Chain error: {error}");
+                }
+            }
+
+            result
         }
 
         rule delete_node() -> GraphResults = _ "delete" _ "node" _ name:name() _ attributes:attributes() {
-            graph.delete_node(name.to_string(), attributes)
+            let result = graph.delete_node(name.to_string(), attributes.clone());
+
+            if result.is_ok() {
+                chain.remove_agent(InternalNodeAttribute::get_identifier(&attributes));
+            }
+
+            result
         }
 
         rule delete_edge() -> GraphResults = _ "delete" _ "connection" _ "from" _ from_name:name() _ from_attributes:attributes() _ "to" _ to_name:name() _ to_attributes:attributes() {
-            graph.delete_edge((from_name.to_string(), from_attributes), (to_name.to_string(), to_attributes))
+            let result = graph.delete_edge((from_name.to_string(), from_attributes.clone()), (to_name.to_string(), to_attributes.clone()));
+
+            if result.is_ok() {
+                if let Err(error) = chain.add_edge_change(InternalNodeAttribute::get_identifier(&from_attributes),InternalNodeAttribute::get_identifier(&to_attributes), 0) {
+                    eprintln!("Chain error: {error}");
+                }
+            }
+
+            result
         }
 
         rule agent() -> FxHashMap<String, String> = _ "with" _ "agent" _ conditions:attributes() { conditions }
@@ -120,9 +161,17 @@ mod tests {
         let result = query_parser::command(cmd.as_str(), &mut graph, &mut chain);
 
         // Then
-        assert_graph_result(result, vec![
-            ("$name", "From"), ("$id", from.as_str()), ("$edges", "1"), ("To.$id", to.as_str()), ("To.$name", "To"), ("To.$edges", "0")
-        ]);
+        assert_graph_result(
+            result,
+            vec![
+                ("$name", "From"),
+                ("$id", from.as_str()),
+                ("$edges", "1"),
+                ("To.$id", to.as_str()),
+                ("To.$name", "To"),
+                ("To.$edges", "0"),
+            ],
+        );
     }
 
     #[test]

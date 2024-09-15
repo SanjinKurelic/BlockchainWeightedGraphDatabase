@@ -1,9 +1,11 @@
+use crate::bootstrap::Bootstrap;
 use crate::chain::Chain;
 use crate::graph::Graph;
 use crate::protocol::Protocol;
 use query_processor::QueryProcessor;
 use tokio::{io, io::AsyncBufReadExt, select};
 
+mod bootstrap;
 mod chain;
 mod graph;
 mod protocol;
@@ -17,6 +19,11 @@ async fn main() {
     let mut protocol = Protocol::init().map_err(|error| eprintln!("{error}")).unwrap();
 
     let mut input = io::BufReader::new(io::stdin()).lines();
+
+    // Initialization for testing
+    if let Err(error) = Bootstrap::init(&mut graph, &mut chain) {
+        eprintln!("{error}");
+    }
 
     loop {
         select! {
@@ -34,7 +41,16 @@ async fn main() {
                     }
                 }
             },
-            event = protocol.fetch_network_event() => protocol.handle_network_event(event),
+            event = protocol.fetch_network_event() => {
+                match protocol.handle_network_event(&mut chain, event) {
+                    Err(error) => eprintln!("{error}"),
+                    Ok(message) =>if message != "NOP" { println!("{message}") },
+                }
+            },
+        }
+
+        if let Err(error) = protocol.publish_changes(&chain) {
+            eprintln!("{error}");
         }
     }
 }
