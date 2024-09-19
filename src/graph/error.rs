@@ -1,5 +1,5 @@
-use std::fmt::{Debug, Display, Formatter};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum DatabaseError {
@@ -50,7 +50,7 @@ impl Display for DatabaseError {
     }
 }
 
-impl Debug for DatabaseError{
+impl Debug for DatabaseError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         error_message(self, formatter)
     }

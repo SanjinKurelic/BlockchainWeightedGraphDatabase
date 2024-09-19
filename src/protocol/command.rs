@@ -1,6 +1,6 @@
+use crate::chain::block::Block;
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
-use crate::chain::block::Block;
 
 #[derive(Serialize, Deserialize)]
 pub struct ChainRequest {

@@ -1,6 +1,6 @@
 use libp2p::{gossipsub, mdns, noise, swarm::NetworkBehaviour, tcp, yamux, Swarm, SwarmBuilder};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::error::Error;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::option::Option;
 use std::time::Duration;
 use tokio::io;

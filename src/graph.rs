@@ -7,9 +7,9 @@ use std::vec;
 
 pub mod attribute;
 mod edge;
-mod error;
+pub(crate) mod error;
 mod generator;
-mod node;
+pub(crate) mod node;
 
 pub struct Graph {
     pub definitions: FxHashMap<String, Vec<String>>,
@@ -48,7 +48,9 @@ impl Graph {
             }
 
             let edge = edge.unwrap();
-            self.find_by_id(&edge.to_node, &edge.to_node_id)?.attributes.iter()
+            self.find_by_id(&edge.to_node, &edge.to_node_id)?
+                .attributes
+                .iter()
                 .for_each(|(key, value)| {
                     result.insert(format!("{}.{key}", edge.to_node), value.clone());
                 });
@@ -278,3 +280,5 @@ impl Graph {
             .ok_or(DatabaseError::NodeNotFound(name.clone(), identifier.clone()))
     }
 }
+
+// There are no test cases for this module as it is tested though query processor integration test cases.
